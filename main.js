@@ -1,132 +1,63 @@
 document.addEventListener('DOMContentLoaded', async () => {
-    try {
-        // Request microphone access
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  try {
+      // Request microphone access
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-        // Create a new AudioContext
-        const audioContext = new AudioContext();
+      // Create a new AudioContext
+      const audioContext = new AudioContext();
 
-        // Create a MediaStreamSource from the stream
-        const mediaStreamSource = audioContext.createMediaStreamSource(stream);
+      // Create a MediaStreamSource from the stream
+      const mediaStreamSource = audioContext.createMediaStreamSource(stream);
 
-        // Create an AnalyserNode
-        const analyser = audioContext.createAnalyser();
-        analyser.fftSize = 2048; // Set the FFT size to control the frequency resolution
+      // Create an AnalyserNode
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 2048; // Set the FFT size to control the frequency resolution
 
-        // Connect the mediaStreamSource to the analyser
-        mediaStreamSource.connect(analyser);
+      // Connect the mediaStreamSource to the analyser
+      mediaStreamSource.connect(analyser);
 
-        // Create a buffer to store the frequency data
-        const bufferLength = analyser.frequencyBinCount;
-        const dataArray = new Uint8Array(bufferLength);
+      // Create a buffer to store the frequency data
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
 
-        // Function to update the data
-        const updateData = () => {
-            analyser.getByteFrequencyData(dataArray);
-            
-            // Perform pitch detection
-            const pitch = autoCorrelate(dataArray, audioContext.sampleRate);
-            console.log('Detected pitch:', pitch);
-        };
-
-        // Start updating the data every 100ms
-        setInterval(updateData, 100);
-
-        // Setup MediaRecorder to record audio
-        const mediaRecorder = new MediaRecorder(stream);
-        const audioChunks = [];
-        mediaRecorder.ondataavailable = event => {
-            audioChunks.push(event.data);
-        };
-
-        // Start recording
-        mediaRecorder.start();
-
-        // Function to perform auto-correlation pitch detection
-        function autoCorrelate(buffer, sampleRate) {
-            // Perform a quick root-mean-square to see if we have enough signal
-            var SIZE = buffer.length;
-            var sumOfSquares = 0;
-            for (var i = 0; i < SIZE; i++) {
-              var val = buffer[i];
-              sumOfSquares += val * val;
-            }
-            var rootMeanSquare = Math.sqrt(sumOfSquares / SIZE)
-            if (rootMeanSquare < 0.01) {
-              return -1;
-            }
+      // Function to update the data
+      const updateData = () => {
+          analyser.getByteFrequencyData(dataArray);
           
-            // Find a range in the buffer where the values are below a given threshold.
-            var r1 = 0;
-            var r2 = SIZE - 1;
-            var threshold = 0.2;
-          
-            // Walk up for r1
-            for (var i = 0; i < SIZE / 2; i++) {
-              if (Math.abs(buffer[i]) < threshold) {
-                r1 = i;
-                break;
-              }
-            }
-          
-            // Walk down for r2
-            for (var i = 1; i < SIZE / 2; i++) {
-              if (Math.abs(buffer[SIZE - i]) < threshold) {
-                r2 = SIZE - i;
-                break;
-              }
-            }
-          
-            // Trim the buffer to these ranges and update SIZE.
-            buffer = buffer.slice(r1, r2);
-            SIZE = buffer.length
-          
-            // Create a new array of the sums of offsets to do the autocorrelation
-            var c = new Array(SIZE).fill(0);
-            // For each potential offset, calculate the sum of each buffer value times its offset value
-            for (let i = 0; i < SIZE; i++) {
-              for (let j = 0; j < SIZE - i; j++) {
-                c[i] = c[i] + buffer[j] * buffer[j+i]
-              }
-            }
-          
-            // Find the last index where that value is greater than the next one (the dip)
-            var d = 0;
-            while (c[d] > c[d+1]) {
-              d++;
-            }
-          
-            // Iterate from that index through the end and find the maximum sum
-            var maxValue = -1;
-            var maxIndex = -1;
-            for (var i = d; i < SIZE; i++) {
-              if (c[i] > maxValue) {
-                maxValue = c[i];
+          // Perform pitch detection
+          const pitch = getPitch(dataArray);
+          console.log(pitch.toString() + " Hz")
+      };
+
+      // Start updating the data every 100ms
+      setInterval(updateData, 100);
+
+      // Setup MediaRecorder to record audio
+      const mediaRecorder = new MediaRecorder(stream);
+      const audioChunks = [];
+      mediaRecorder.ondataavailable = event => {
+          audioChunks.push(event.data);
+      };
+
+      // Start recording
+      mediaRecorder.start();
+
+      // Function for pitch detection
+      function getPitch(array) {
+        let maxIndex = 0;
+        let max = array[0];
+        for (let i = 1; i < array.length; i++) {
+            if (array[i] > max) {
+                max = array[i];
                 maxIndex = i;
-              }
             }
-          
-            var T0 = maxIndex;
-          
-            // Not as sure about this part, don't @ me
-            // From the original author:
-            // interpolation is parabolic interpolation. It helps with precision. We suppose that a parabola pass through the
-            // three points that comprise the peak. 'a' and 'b' are the unknowns from the linear equation system and b/(2a) is
-            // the "error" in the abscissa. Well x1,x2,x3 should be y1,y2,y3 because they are the ordinates.
-            var x1 = c[T0 - 1];
-            var x2 = c[T0];
-            var x3 = c[T0 + 1]
-          
-            var a = (x1 + x3 - 2 * x2) / 2;
-            var b = (x3 - x1) / 2
-            if (a) {
-              T0 = T0 - b / (2 * a);
-            }
-          
-            return sampleRate/T0;
-          }
+        }
+        let frequencyResolution = audioContext.sampleRate / analyser.fftSize
+        let pitch = maxIndex * frequencyResolution;
+        return pitch;
+      }
 
-    } catch (error) {
-        console.error('Error accessing microphone:', error);
-    }
+  } catch (error) {
+      console.error('Error accessing microphone:', error);
+  }
 });
